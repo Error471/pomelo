@@ -8,7 +8,7 @@ from . import __version__, config as cfgmod
 from .ui import icons, theme
 from .ui.theme import c
 from .ui.widgets import Divider, Logo, Segmented, Toggle
-from .utils import IS_WIN, ffmpeg_exe, has_module, soffice_exe
+from .utils import IS_WIN, ffmpeg_exe, has_module, set_custom_soffice, soffice_exe
 
 KEYS = [("shift", "⇧ Mayús"), ("ctrl", "Ctrl"), ("alt", "Alt")]
 PAGES = [("general", "General", "sliders"), ("wheel", "Rueda", "wheel"), ("output", "Archivos", "folder"),
@@ -71,7 +71,7 @@ class StatusPill(QWidget):
     def __init__(self, ok, parent=None):
         super().__init__(parent)
         self.ok = ok
-        self.setFixedSize(QSize(104, 26))
+        self.setFixedSize(QSize(120, 26))
 
     def paintEvent(self, _e):
         p = QPainter(self)
@@ -84,7 +84,7 @@ class StatusPill(QWidget):
         icons.draw(p, "check" if self.ok else "x", QRectF(10, 6, 14, 14), col, 2.2)
         p.setPen(col)
         p.setFont(theme.font(9, QFont.Weight.DemiBold))
-        p.drawText(QRectF(28, 0, 70, 26), Qt.AlignmentFlag.AlignVCenter, "Instalado" if self.ok else "No instalado")
+        p.drawText(QRectF(28, 0, 88, 26), Qt.AlignmentFlag.AlignVCenter, "Instalado" if self.ok else "No instalado")
 
 
 def page(title, subtitle, *sections):
@@ -273,24 +273,82 @@ class SettingsDialog(QDialog):
                              Row("Separador CSV", "Punto y coma abre directamente en Excel en español.", sep)]))
 
     def _components(self):
-        lo_ok = soffice_exe() is not None
-        get_lo = QPushButton("Descargar")
-        get_lo.setProperty("variant", "primary")
-        get_lo.setCursor(Qt.CursorShape.PointingHandCursor)
-        get_lo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://es.libreoffice.org/descarga/")))
+        lo_path = soffice_exe()
+        lo_ok = lo_path is not None
         lo_ctrl = QHBoxLayout()
         lo_ctrl.setSpacing(10)
         if not lo_ok:
+            get_lo = QPushButton("Descargar")
+            get_lo.setProperty("variant", "primary")
+            get_lo.setCursor(Qt.CursorShape.PointingHandCursor)
+            get_lo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://es.libreoffice.org/descarga/")))
             lo_ctrl.addWidget(get_lo)
         lo_ctrl.addWidget(StatusPill(lo_ok))
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        recheck = QPushButton("Comprobar de nuevo")
+        recheck.setCursor(Qt.CursorShape.PointingHandCursor)
+        recheck.clicked.connect(self._recheck)
+        pick = QPushButton("Indicar ruta…")
+        pick.setProperty("variant", "ghost")
+        pick.setCursor(Qt.CursorShape.PointingHandCursor)
+        pick.clicked.connect(self._pick_soffice)
+        actions.addWidget(recheck)
+        actions.addWidget(pick)
+        if self.config.get("soffice_path"):
+            reset = QPushButton("Detección automática")
+            reset.setProperty("variant", "ghost")
+            reset.setCursor(Qt.CursorShape.PointingHandCursor)
+            reset.clicked.connect(lambda: self._set_soffice(""))
+            actions.addWidget(reset)
+        for i in range(actions.count()):
+            btn = actions.itemAt(i).widget()
+            btn.setMinimumWidth(btn.sizeHint().width() + 18)
+        actions.addStretch()
+
+        lo_desc = (f"Encontrado en {lo_path}" if lo_ok else
+                   "Word, Excel y PowerPoint. Gratuito. Si ya lo instalaste y no aparece, "
+                   "pulsa «Comprobar de nuevo» o «Indicar ruta…».")
         rows = [
             Row("FFmpeg", "Audio y vídeo. Incluido con Pomelo.", StatusPill(ffmpeg_exe() is not None)),
-            Row("LibreOffice", "Word, Excel y PowerPoint. Gratuito; tras instalarlo, reinicia Pomelo.", lo_ctrl),
+            Row("LibreOffice", lo_desc, lo_ctrl, below=actions),
             Row("PyMuPDF", "Lectura y edición de PDF.", StatusPill(has_module("fitz") or has_module("pymupdf"))),
             Row("pillow-heif", "Fotos HEIC y AVIF del iPhone.", StatusPill(has_module("pillow_heif"))),
         ]
         return page("Componentes", "Pomelo usa estos motores para convertir. Todo funciona sin conexión.",
                     Section(rows))
+
+    def _rebuild_components(self):
+        idx = [k for k, _, _ in PAGES].index("components")
+        old = self.stack.widget(idx)
+        self.stack.insertWidget(idx, self._components())
+        self.stack.removeWidget(old)
+        old.deleteLater()
+        self.stack.setCurrentIndex(idx)
+        self.changed.emit()
+
+    def _recheck(self):
+        found = soffice_exe(refresh=True)
+        self._rebuild_components()
+        if not found:
+            QMessageBox.information(
+                self, "Pomelo",
+                "No he encontrado LibreOffice.\n\nSi está instalado en otra carpeta, pulsa «Indicar ruta…» "
+                "y selecciona el archivo soffice.exe (suele estar en la subcarpeta «program» de LibreOffice).")
+
+    def _pick_soffice(self):
+        start = r"C:\Program Files\LibreOffice\program" if IS_WIN else ""
+        path, _ = QFileDialog.getOpenFileName(self, "Selecciona soffice.exe", start,
+                                              "soffice.exe (soffice.exe);;Ejecutables (*.exe);;Todos (*)")
+        if path:
+            self._set_soffice(path)
+
+    def _set_soffice(self, path):
+        self.config["soffice_path"] = path
+        set_custom_soffice(path)
+        cfgmod.save(self.config)
+        self._rebuild_components()
 
     def _about(self):
         w = QWidget()

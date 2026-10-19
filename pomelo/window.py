@@ -360,8 +360,12 @@ class StatusBar(QWidget):
         self._timer = QTimer(self)
         self._timer.setInterval(33)
         self._timer.timeout.connect(self._tick)
-        self.deps = [("FFmpeg", ffmpeg_exe() is not None), ("LibreOffice", soffice_exe() is not None)]
+        self.refresh_deps()
         self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def refresh_deps(self):
+        self.deps = [("FFmpeg", ffmpeg_exe() is not None), ("LibreOffice", soffice_exe() is not None)]
+        self.update()
 
     def set_busy(self, n):
         self.busy = n

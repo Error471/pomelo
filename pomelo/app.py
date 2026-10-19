@@ -14,7 +14,7 @@ from .trigger import DragTrigger
 from .ui import icons, theme
 from .ui.picker import ActionPicker
 from .ui.toast import ToastManager
-from .utils import IS_WIN, reveal_in_explorer, resource_path
+from .utils import IS_WIN, reveal_in_explorer, resource_path, set_custom_soffice
 from .window import MainWindow
 
 SERVER_NAME = f"{APP_NAME}-{getpass.getuser()}"
@@ -46,6 +46,7 @@ class PomeloApp(QObject):
         self.config = cfgmod.load()
         theme.apply(qapp, self.config.get("theme", "system"))
         self._watch_system_theme()
+        set_custom_soffice(self.config.get("soffice_path", ""))
         self.ctx = registry.Context(self.config)
         registry.load_all()
         self.icon = make_icon()
@@ -151,10 +152,12 @@ class PomeloApp(QObject):
         if theme.current_mode() != self.config.get("theme", "system"):
             self._reapply_theme()
         self.window.zone.hints.update()
+        self.window.status.refresh_deps()
 
     # --- Selector y archivos recibidos ---
 
     def show_picker(self, files, global_pos: QPoint = None):
+        self.window.status.refresh_deps()
         files = [Path(f) for f in files if Path(f).exists()]
         if not files:
             return

@@ -12,6 +12,7 @@ DEFAULTS = {
     "wheel_enabled": True,
     "theme": "system",
     "output_dir": "",
+    "soffice_path": "",
     "image_quality": 90,
     "pdf_dpi": 150,
     "csv_separator": ";",

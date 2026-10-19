@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -72,19 +73,93 @@ def ffmpeg_exe():
         return shutil.which("ffmpeg")
 
 
-@lru_cache(maxsize=1)
-def soffice_exe():
+# --- LibreOffice ---
+
+CUSTOM_SOFFICE = ""
+_soffice_cache = None
+_soffice_checked = 0.0
+
+
+def _registry_soffice():
+    import winreg
+    keys = (
+        (r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\soffice.exe", False),
+        (r"SOFTWARE\LibreOffice\UNO\InstallPath", True),
+    )
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            for sub, is_dir in keys:
+                try:
+                    with winreg.OpenKey(hive, sub, 0, winreg.KEY_READ | view) as k:
+                        value, _ = winreg.QueryValueEx(k, "")
+                except OSError:
+                    continue
+                cand = Path(str(value).strip('"'))
+                if is_dir:
+                    cand = cand / "soffice.exe"
+                if cand.is_file():
+                    return str(cand)
+    return None
+
+
+def _fixed_drives():
+    import ctypes
+    import string
+    mask = ctypes.windll.kernel32.GetLogicalDrives()
+    for i, letter in enumerate(string.ascii_uppercase):
+        root = f"{letter}:\\"
+        if mask >> i & 1 and ctypes.windll.kernel32.GetDriveTypeW(root) == 3:
+            yield Path(root)
+
+
+def _find_soffice():
+    if CUSTOM_SOFFICE and Path(CUSTOM_SOFFICE).is_file():
+        return CUSTOM_SOFFICE
     found = shutil.which("soffice") or shutil.which("libreoffice")
     if found:
         return found
-    if IS_WIN:
-        for env in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
-            base = os.environ.get(env)
-            if base:
-                cand = Path(base) / "LibreOffice" / "program" / "soffice.exe"
-                if cand.exists():
+    if not IS_WIN:
+        return None
+    try:
+        found = _registry_soffice()
+        if found:
+            return found
+    except Exception:
+        pass
+    bases = [Path(os.environ[v]) for v in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA")
+             if os.environ.get(v)]
+    try:
+        for drive in _fixed_drives():
+            bases += [drive / "Program Files", drive / "Program Files (x86)", drive]
+    except Exception:
+        pass
+    for base in bases:
+        for pattern in ("LibreOffice*/program/soffice.exe", "Programs/LibreOffice*/program/soffice.exe"):
+            for cand in base.glob(pattern):
+                if cand.is_file():
                     return str(cand)
     return None
+
+
+def soffice_exe(refresh: bool = False):
+    """Ruta a soffice.exe. Si no está, se vuelve a buscar cada pocos segundos (detecta instalaciones nuevas)."""
+    global _soffice_cache, _soffice_checked
+    if _soffice_cache and not refresh:
+        if Path(_soffice_cache).is_file():
+            return _soffice_cache
+        _soffice_cache = None
+    now = time.monotonic()
+    if refresh or now - _soffice_checked > 10:
+        _soffice_checked = now
+        _soffice_cache = _find_soffice()
+    return _soffice_cache
+
+
+def set_custom_soffice(path: str):
+    global CUSTOM_SOFFICE, _soffice_cache
+    CUSTOM_SOFFICE = path or ""
+    _soffice_cache = None
+    soffice_exe(refresh=True)
 
 
 def has_module(name: str) -> bool:
