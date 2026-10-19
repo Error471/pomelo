@@ -7,7 +7,7 @@ Todo se procesa en tu equipo: no se sube nada a internet.
 
 ## Descarga
 
-1. Ve a [**Releases**](../../releases/latest) y descarga `Pomelo-v0.2.0-windows-x64.zip`.
+1. Ve a [**Releases**](../../releases/latest) y descarga el archivo `Pomelo-v…-windows-x64.zip`.
 2. Descomprímelo donde quieras (por ejemplo en `Documentos\Pomelo`).
 3. Abre `Pomelo.exe`.
 
